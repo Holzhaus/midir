@@ -4,41 +4,39 @@ use std::convert::TryInto;
 use ::errors::*;
 use ::Ignore;
 
-use ::windows::{Interface, HString};
+use ::windows::{Interface, HSTRING};
 
 use ::bindings::{
     Windows::Foundation::{TypedEventHandler, EventRegistrationToken, IClosable, IMemoryBufferReference},
     Windows::Devices::Midi::*,
     Windows::Devices::Enumeration::DeviceInformation,
     Windows::Storage::Streams::{Buffer, DataWriter},
-    Windows::Win32::WinRT::IMemoryBufferByteAccess,
+    Windows::Win32::System::WinRT::IMemoryBufferByteAccess,
 };
 
-fn buffer_get_bytes<'a>(byte_access: &'a IMemoryBufferByteAccess) -> &'a[u8] {
+// see also https://github.com/microsoft/windows-rs/blob/master/examples/buffer/src/main.rs
+fn buffer_get_bytes(buffer: &IMemoryBufferReference) -> ::windows::Result<&[u8]> {
+    let interop = buffer.cast::<IMemoryBufferByteAccess>()?;
+    let mut bufptr = std::ptr::null_mut();
+    let mut capacity: u32 = 0;
     unsafe { // TODO: somehow make sure that the buffer is not invalidated while we're reading from it ...
-        let mut bufptr = std::ptr::null_mut();
-        let mut capacity: u32 = 0;
-        byte_access.GetBuffer(&mut bufptr, &mut capacity).ok().expect("GetBuffer failed");
+        interop.GetBuffer(&mut bufptr, &mut capacity).ok()?;
         if capacity == 0 {
             bufptr = 1 as *mut u8; // null pointer is not allowed
         }
-        std::slice::from_raw_parts(bufptr, capacity as usize)
+        Ok(std::slice::from_raw_parts(bufptr, capacity as usize))
     }
 }
 
 #[derive(Clone)]
 pub struct MidiInputPort {
-    id: HString
+    id: HSTRING
 }
-
-unsafe impl Send for MidiInputPort {} // because HString doesn't ...
 
 pub struct MidiInput {
-    selector: HString,
+    selector: HSTRING,
     ignore_flags: Ignore
 }
-
-unsafe impl Send for MidiInput {} // because HString doesn't ... (FIXME)
 
 impl MidiInput {
     pub fn new(_client_name: &str) -> Result<Self, InitError> {
@@ -83,8 +81,7 @@ impl MidiInput {
         let buffer = message.RawData().expect("RawData failed");
         let membuffer = Buffer::CreateMemoryBufferOverIBuffer(&buffer).expect("CreateMemoryBufferOverIBuffer failed");
         let memory_reference: IMemoryBufferReference = membuffer.CreateReference().expect("CreateReference failed");
-        let byte_access: IMemoryBufferByteAccess = memory_reference.cast().unwrap();
-        let message_bytes = buffer_get_bytes(&byte_access);
+        let message_bytes = buffer_get_bytes(&memory_reference).expect("buffer_get_bytes failed");
 
         // The first byte in the message is the status
         let status = message_bytes[0];
@@ -170,16 +167,12 @@ struct HandlerData<T> {
 
 #[derive(Clone)]
 pub struct MidiOutputPort {
-    id: HString
+    id: HSTRING
 }
-
-unsafe impl Send for MidiOutputPort {} // because HString doesn't ...
 
 pub struct MidiOutput {
-    selector: HString // TODO: change to FastHString?
+    selector: HSTRING
 }
-
-unsafe impl Send for MidiOutput {} // because HString doesn't ...
 
 impl MidiOutput {
     pub fn new(_client_name: &str) -> Result<Self, InitError> {

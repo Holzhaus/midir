@@ -1,7 +1,7 @@
 use std::{mem, slice};
 use std::io::{Write, stderr};
 
-use ::bindings::Windows::Win32::Multimedia::{
+use ::bindings::Windows::Win32::Media::Multimedia::{
     midiInAddBuffer, HMIDIIN, MIDIHDR, MMSYSERR_NOERROR,
     MM_MIM_DATA, MM_MIM_LONGDATA, MM_MIM_LONGERROR
 };

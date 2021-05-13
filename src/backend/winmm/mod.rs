@@ -9,14 +9,14 @@ use memalloc::{allocate, deallocate};
 use std::mem::MaybeUninit;
 use std::ptr::null_mut;
 
-use ::bindings::Windows::Win32::Multimedia::{
+use ::bindings::Windows::Win32::Media::Multimedia::{
     midiInAddBuffer, midiInClose, midiInGetDevCapsW, midiInGetNumDevs,
     midiInOpen, midiInPrepareHeader, midiInReset, midiInStart,
     midiInStop, midiInUnprepareHeader, midiOutClose,
     midiOutGetDevCapsW, midiOutGetNumDevs, midiOutLongMsg, midiOutOpen,
     midiOutPrepareHeader, midiOutReset, midiOutShortMsg,
     midiOutUnprepareHeader, midiInMessage, midiOutMessage,
-    HMIDIIN, HMIDIOUT, MIDIHDR, MIDIINCAPSW, MIDIOUTCAPSW, MIDI_OPEN_TYPE,
+    HMIDIIN, HMIDIOUT, MIDIHDR, MIDIINCAPSW, MIDIOUTCAPSW, CALLBACK_FUNCTION, CALLBACK_NULL,
     MMSYSERR_NOERROR, MMSYSERR_ALLOCATED, MMSYSERR_BADDEVICEID,
     MIDIERR_NOTREADY, MIDIERR_STILLPLAYING,
     DRV_QUERYDEVICEINTERFACE, DRV_QUERYDEVICEINTERFACESIZE
@@ -201,7 +201,7 @@ impl MidiInput {
                         port_number as UINT,
                         handler::handle_input::<T> as DWORD_PTR,
                         handler_data_ptr as DWORD_PTR,
-                        MIDI_OPEN_TYPE::CALLBACK_FUNCTION) };
+                        CALLBACK_FUNCTION) };
         if result == MMSYSERR_ALLOCATED { 
             return Err(ConnectError::other("could not create Windows MM MIDI input port (MMSYSERR_ALLOCATED)", self));
         } else if result != MMSYSERR_NOERROR {
@@ -414,7 +414,7 @@ impl MidiOutput {
             None => return Err(ConnectError::new(ConnectErrorKind::InvalidPort, self))
         };
         let mut out_handle: MaybeUninit<HMIDIOUT> = MaybeUninit::uninit();
-        let result = unsafe { midiOutOpen(out_handle.as_mut_ptr(), port_number as UINT, 0, 0, MIDI_OPEN_TYPE::CALLBACK_NULL) };
+        let result = unsafe { midiOutOpen(out_handle.as_mut_ptr(), port_number as UINT, 0, 0, CALLBACK_NULL) };
         if result == MMSYSERR_ALLOCATED {
             return Err(ConnectError::other("could not create Windows MM MIDI output port (MMSYSERR_ALLOCATED)", self));
         } else if result != MMSYSERR_NOERROR {
