@@ -2,7 +2,43 @@ extern crate midir;
 
 use std::error::Error;
 use std::io::{stdin, stdout, Write};
-use midir::{MidiInput, MidiInputPort, MidiOutput, MidiOutputPort, Ignore};
+use midir::{MidiInput, MidiInputPort, MidiInputConnection, MidiOutput, MidiOutputPort, MidiOutputConnection, Ignore};
+
+struct MidiDevice {
+    name: String,
+    input_port: MidiInputPort,
+    output_port: MidiOutputPort,
+    input_connection: Option<MidiInputConnection<()>>,
+}
+
+impl MidiDevice {
+    pub fn name<'a>(&'a self) -> &'a str {
+        &self.name
+    }
+
+    fn disconnect_input(&mut self) -> bool {
+        let conn = std::mem::replace(&mut self.input_connection, None);
+        match conn {
+            Some(connection) => {
+                connection.close();
+                true
+            },
+            _ => false,
+        }
+    }
+
+    pub fn connect_input(&mut self) -> bool {
+        if let Some(conn) = &self.input_connection {
+            return false;
+        }
+        let input_port = self.input_port.clone();
+        let input = MidiInput::new("input").unwrap();
+        self.input_connection = Some(input.connect(&input_port, "midir-read-input", move |stamp, message, _| {
+            println!("{}: {:?} (len = {})", stamp, message, message.len());
+        }, ()).expect("failed to connect"));
+        true
+    }
+}
 
 struct MidiDeviceManager {
     input: MidiInput,
@@ -20,11 +56,12 @@ impl MidiDeviceManager {
         })
     }
 
-    pub fn ports(&self) -> Vec<(String, MidiInputPort, MidiOutputPort)> {
+    pub fn ports(&self) -> Vec<MidiDevice> {
         self.input.ports().into_iter().filter_map(|input_port| {
-            if let Some(port_name) = self.input.port_name(&input_port).ok() {
-                if let Some(output_port) = self.output_port(&port_name) {
-                    return Some((port_name, input_port, output_port));
+            if let Some(name) = self.input.port_name(&input_port).ok() {
+                if let Some(output_port) = self.output_port(&name) {
+                    let input_connection = None;
+                    return Some(MidiDevice { name, input_port, output_port, input_connection });
                 }
             }
             None
@@ -55,37 +92,40 @@ fn main() {
 
 fn run() -> Result<(), Box<dyn Error>> {
     let manager = MidiDeviceManager::new()?;
-    let ports = manager.ports();
-    let port_name = match ports.len() {
+    let mut ports = manager.ports();
+    let mut device = match ports.len() {
         0 => return Err("no port found".into()),
         1 => {
-            println!("Choosing the only available port: {}", &ports[0].0);
-            &ports[0].0
+            println!("Choosing the only available port: {}", &ports[0].name);
+            ports.remove(0)
         },
         _ => {
             println!("\nAvailable ports:");
-            for (i, (name, _, _)) in ports.iter().enumerate() {
-                println!("{}: {}", i, name);
+            for (i, device) in ports.iter().enumerate() {
+                println!("{}: {}", i, device.name);
             }
             print!("Please select port: ");
             stdout().flush()?;
             let mut input = String::new();
             stdin().read_line(&mut input)?;
-            &ports.get(input.trim().parse::<usize>()?)
-                     .ok_or("invalid port selected")?.0
+            ports.remove(input.trim().parse::<usize>()?)
         }
     };
 
     println!("Starting endless loop, press CTRL-C to exit...");
 
+    device.connect_input();
+
     let mut last_state = None;
     loop {
-        let current_state = manager.is_available(port_name);
+        let current_state = manager.is_available(&device.name);
         if last_state != Some(current_state) {
             if current_state {
-                println!("{}: available", port_name);
+                println!("{}: available", device.name);
+                device.connect_input();
             } else {
-                println!("{}: unavailable", port_name);
+                println!("{}: unavailable", device.name);
+                device.disconnect_input();
             }
             last_state = Some(current_state);
             std::thread::sleep(std::time::Duration::from_millis(1000));
